@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>AR Hiro GIF Controller</title>
+
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/dist/gifuct-js.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: Arial, sans-serif;
+    }
+
+    #ui {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 12px;
+      z-index: 9999;
+      display: flex;
+      justify-content: center;
+      padding: 0 10px;
+      pointer-events: none;
+    }
+
+    #panel {
+      width: min(96vw, 520px);
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(15, 15, 18, 0.9);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 8px 30px rgba(0,0,0,.35);
+      pointer-events: auto;
+    }
+
+    #status {
+      text-align: center;
+      color: #fff;
+      font-weight: 700;
+      font-size: 17px;
+      margin-bottom: 6px;
+    }
+
+    #speedLabel {
+      text-align: center;
+      color: #63e6be;
+      font-weight: 700;
+      font-size: 23px;
+      margin-bottom: 10px;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      flex: 1;
+      min-height: 52px;
+      border: 0;
+      border-radius: 13px;
+      font-size: 16px;
+      font-weight: 700;
+      touch-action: manipulation;
+      cursor: pointer;
+    }
+
+    button:active { transform: scale(.97); }
+
+    #slower { background: #ef4444; color: white; }
+    #faster { background: #22c55e; color: white; }
+
+    #presets {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    #presets button {
+      min-height: 42px;
+      background: #374151;
+      color: white;
+      font-size: 13px;
+    }
+
+    #presets button.active {
+      outline: 2px solid #63e6be;
+      background: #111827;
+    }
+
+    button:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+    }
+
+    .a-enter-vr,
+    .a-enter-ar {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="ui">
+    <div id="panel">
+      <div id="status">กำลังค้นหา Hiro Marker...</div>
+      <div id="speedLabel">ความเร็วภาพ: 1.0×</div>
+
+      <div class="row">
+        <button id="slower" disabled>− ช้าลง</button>
+        <button id="faster" disabled>+ เร็วขึ้น</button>
+      </div>
+
+      <div id="presets"></div>
+    </div>
+  </div>
+
+  <a-scene
+    embedded
+    vr-mode-ui="enabled:false"
+    renderer="antialias:true; alpha:true; colorManagement:true;"
+    arjs="sourceType:webcam; debugUIEnabled:false; detectionMode:mono;"
+  >
+    <a-entity light="type:ambient; intensity:1.5"></a-entity>
+
+    <a-marker
+      id="hiroMarker"
+      preset="hiro"
+      emitevents="true"
+      smooth="true"
+      smooth-count="5"
+      smooth-tolerance="0.01"
+      smooth-threshold="2"
+    >
+      <!-- เพิ่ม/ลดขนาดตรง scale ได้ -->
+      <a-plane
+        id="gifPlane"
+        position="0 0.9 0"
+        rotation="-90 0 0"
+        width="1.5"
+        height="1.5"
+        material="shader:flat; transparent:true; side:double;"
+      ></a-plane>
+    </a-marker>
+
+    <a-entity camera></a-entity>
+  </a-scene>
+
+  <script>
+    const marker = document.getElementById("hiroMarker");
+    const plane = document.getElementById("gifPlane");
+    const status = document.getElementById("status");
+    const speedLabel = document.getElementById("speedLabel");
+    const slower = document.getElementById("slower");
+    const faster = document.getElementById("faster");
+    const presets = document.getElementById("presets");
+
+    const speedLevels = [0.25, 0.5, 1, 1.5, 2, 3, 4];
+    let speedIndex = 2;
+    let markerFound = false;
+
+    let frames = [];
+    let canvas = null;
+    let ctx = null;
+    let texture = null;
+    let currentFrame = 0;
+    let lastFrameTime = 0;
+    let previousTime = 0;
+
+    function speed() {
+      return speedLevels[speedIndex];
+    }
+
+    function updateUI() {
+      speedLabel.textContent = `ความเร็วภาพ: ${speed().toFixed(2).replace(/0$/, '').replace(/\.00$/, '')}×`;
+      slower.disabled = !markerFound || speedIndex <= 0;
+      faster.disabled = !markerFound || speedIndex >= speedLevels.length - 1;
+
+      [...presets.children].forEach((btn, i) => {
+        btn.classList.toggle("active", i === speedIndex);
+      });
+    }
+
+    speedLevels.forEach((value, i) => {
+      const btn = document.createElement("button");
+      btn.textContent = `${value}×`;
+      btn.addEventListener("click", () => {
+        speedIndex = i;
+        updateUI();
+      });
+      presets.appendChild(btn);
+    });
+
+    slower.addEventListener("click", () => {
+      if (speedIndex > 0) {
+        speedIndex--;
+        updateUI();
+      }
+    });
+
+    faster.addEventListener("click", () => {
+      if (speedIndex < speedLevels.length - 1) {
+        speedIndex++;
+        updateUI();
+      }
+    });
+
+    marker.addEventListener("markerFound", () => {
+      markerFound = true;
+      status.textContent = "✓ พบ Hiro Marker แล้ว";
+      status.style.color = "#63e6be";
+      updateUI();
+    });
+
+    marker.addEventListener("markerLost", () => {
+      markerFound = false;
+      status.textContent = "กำลังค้นหา Hiro Marker...";
+      status.style.color = "#fff";
+      updateUI();
+    });
+
+    async function loadGif() {
+      try {
+        const res = await fetch("./limbus-company-limbus.gif", { cache: "no-store" });
+        if (!res.ok) throw new Error("โหลด GIF ไม่สำเร็จ");
+
+        const buffer = await res.arrayBuffer();
+        const gif = gifuct.parseGIF(buffer);
+        frames = gifuct.decompressFrames(gif, true);
+
+        if (!frames.length) throw new Error("ไม่พบเฟรมใน GIF");
+
+        canvas = document.createElement("canvas");
+        canvas.width = gif.lsd.width;
+        canvas.height = gif.lsd.height;
+        ctx = canvas.getContext("2d");
+
+        texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.needsUpdate = true;
+
+        function applyTexture() {
+          const mesh = plane.getObject3D("mesh");
+          if (!mesh) {
+            requestAnimationFrame(applyTexture);
+            return;
+          }
+          mesh.material.map = texture;
+          mesh.material.transparent = true;
+          mesh.material.needsUpdate = true;
+          drawFrame(0);
+        }
+
+        applyTexture();
+        requestAnimationFrame(animateGif);
+
+      } catch (err) {
+        console.error(err);
+        status.textContent = "โหลด GIF ไม่สำเร็จ";
+        status.style.color = "#f87171";
+      }
+    }
+
+    function drawFrame(index) {
+      if (!frames.length) return;
+
+      const frame = frames[index];
+      const imageData = new ImageData(
+        frame.patch,
+        frame.dims.width,
+        frame.dims.height
+      );
+
+      ctx.putImageData(
+        imageData,
+        frame.dims.left,
+        frame.dims.top
+      );
+
+      texture.needsUpdate = true;
+    }
+
+    function animateGif(time) {
+      requestAnimationFrame(animateGif);
+
+      if (!frames.length || speed() === 0) {
+        previousTime = time;
+        return;
+      }
+
+      const frame = frames[currentFrame];
+      const baseDelay = Math.max(20, frame.delay || 100);
+      const adjustedDelay = baseDelay / speed();
+
+      if (time - lastFrameTime >= adjustedDelay) {
+        currentFrame++;
+
+        if (currentFrame >= frames.length) {
+          currentFrame = 0;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        drawFrame(currentFrame);
+        lastFrameTime = time;
+      }
+    }
+
+    updateUI();
+
+    document.querySelector("a-scene").addEventListener("loaded", loadGif);
+  </script>
+</body>
+</html>
